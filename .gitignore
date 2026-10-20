@@ -1,0 +1,21 @@
+# JavaScript dependencies and frontend output
+/node_modules/
+/.next/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# Rust build output and generated Tauri schemas
+/src-tauri/target/
+/src-tauri/gen/schemas/
+
+# Local environment and platform files
+.env*
+!.env.example
+.DS_Store
+*.log
+
+# Local verification records and design-tool caches
+/.audit/
+/.impeccable/build/
+/.impeccable/hook.cache.json

@@ -1,0 +1,109 @@
+# BYT
+
+BYT (Book Your Time) is a desktop app that persistently reminds you to submit your working hours in your
+company's timesheet system.
+
+Stack: **Tauri 2 + Next.js (React and TypeScript)**, targeting **Windows and macOS**. Settings and
+reminder state stay on your computer; no account or backend is required.
+
+Setup and Settings save the timesheet URL, weekly or monthly rule, local time,
+repeat interval, and start-at-login preference on this computer. Saved options
+restore after quitting and reopening; Cancel and Back discard unsaved edits.
+Start at login defaults on and is applied when saving. Settings are stored in
+`preferences.json` in Tauri’s app configuration directory.
+Reminders run in the native app, including while its window is closed. Due and
+missed dates persist in `reminders.json` beside settings; older unconfirmed dates
+join the next scheduled reminder. Snooze for 15 minutes, 30 minutes, or one hour.
+Opening the timesheet uses the default browser; confirming submission is a
+separate action available five seconds after a successful browser handoff.
+Confirmation clears the listed dates without submitting anything to the website.
+The tray/menu bar provides pending reminders, settings, and Quit BYT.
+
+Schedules use the computer’s current local time. A numbered monthly day that
+is absent from a month is skipped; choose Last day of the month for every month.
+Automatic login launches run in the background. See [SPEC.md](SPEC.md) for the
+agreed first-version behavior.
+
+Run the native behavior and persistence checks with:
+
+```sh
+cargo test --manifest-path src-tauri/Cargo.toml
+```
+
+Native UI verification follows [.agents/skills/verify/SKILL.md](.agents/skills/verify/SKILL.md).
+Its scaffold-era feature map is older than the implementation; record actual
+controls and outcomes when exercising reminders. Windows behavior still needs
+verification on Windows.
+
+## Prerequisites
+
+- Node.js 20.9 or newer and npm (Node.js 22 LTS recommended).
+- Stable Rust installed through [rustup](https://rustup.rs/).
+- macOS: Xcode Command Line Tools (`xcode-select --install`), or full Xcode.
+- Windows: Microsoft C++ Build Tools with the **Desktop development with C++**
+  workload, and Microsoft Edge WebView2.
+
+See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for
+platform-specific setup. After installing Rust, restart your terminal so `cargo`
+is available on your PATH.
+
+## Development
+
+```sh
+npm ci
+npm run tauri dev
+```
+
+Tauri starts the Next.js development server at `http://127.0.0.1:3000` and opens
+the desktop window. Keep port 3000 available. To work on the frontend in a
+browser, run `npm run dev` instead.
+
+```sh
+npm run lint
+npm run typecheck
+cargo check --manifest-path src-tauri/Cargo.toml
+```
+
+## Build
+
+```sh
+npm run tauri build
+```
+
+The build exports Next.js into `out/`, then embeds those static files in the
+native app. Installers are written to `src-tauri/target/release/bundle/`. Build on
+macOS for macOS packages and on Windows for Windows installers. Distribution
+signing and notarization are not configured yet.
+
+Run `npm run build` to verify only the frontend export, or
+`npm run tauri build -- --no-bundle` to compile the desktop app without creating
+installers.
+
+## App icon
+
+The editable icon source is [`app-icon.svg`](app-icon.svg): warm white BYT
+lettering on the app's muted green, with transparent padding for the macOS Dock.
+The letters are vector paths, so no font installation is needed.
+
+After editing the source, regenerate the platform icons and rebuild:
+
+```sh
+npm run tauri -- icon ./app-icon.svg
+npm run tauri -- build
+```
+
+Generated files live in `src-tauri/icons/` and are already referenced by
+`src-tauri/tauri.conf.json`. Install and reopen the rebuilt app to use the icon.
+
+## Project structure
+
+- `src/app/`: Next.js App Router pages, layout, and styles.
+- `src-tauri/src/`: Rust desktop entry point and Tauri application setup.
+- `src-tauri/tauri.conf.json`: Native window and frontend build configuration.
+- `src-tauri/capabilities/`: Permissions granted to the desktop window.
+
+Next.js uses [static export](https://v2.tauri.app/start/frontend/nextjs/) because
+the packaged app runs without a Node.js server. Use client components for
+interactive UI and call Tauri APIs from the client; runtime server actions and
+API routes are unavailable. Local preference persistence runs in the Rust desktop layer. Native scheduling
+will also live there.

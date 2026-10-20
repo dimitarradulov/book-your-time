@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" role="img" aria-labelledby="title description">
+  <title id="title">BYT</title>
+  <desc id="description">Warm white BYT lettering on a muted green rounded square.</desc>
+  <!-- Matches the app's green (#42634a) and warm white (#f7f8f5).
+       Transparent padding keeps the tile comfortably sized in the macOS Dock.
+       Lettering is outlined, so generation never depends on an installed font. -->
+  <rect x="96" y="96" width="832" height="832" rx="184" fill="#42634a" />
+  <g transform="translate(193 370)" fill="#f7f8f5">
+    <path fill-rule="evenodd" d="M0 0H100C157 0 187 27 187 73C187 102 173 123 151 134C179 144 195 167 195 199C195 253 159 284 100 284H0ZM58 52V113H94C117 113 129 103 129 82C129 62 117 52 94 52ZM58 165V232H96C123 232 136 221 136 198C136 176 123 165 96 165Z" />
+    <path d="M216 0H283L326 94L369 0H436L356 158V284H296V158Z" />
+    <path d="M442 0H638V58H570V284H510V58H442Z" />
+  </g>
+</svg>
