@@ -19,6 +19,12 @@ separate action available five seconds after a successful browser handoff.
 Confirmation clears the listed dates without submitting anything to the website.
 The tray/menu bar provides pending reminders, settings, and Quit BYT.
 
+Automatic booking reminders play a brief double chime, including repeats while
+the window is focused, snooze expiry, and same-day missed reminders after startup
+or wake. Sound defaults on. Turn off **Reminder sound** in Settings to silence it.
+Sound respects system volume and mute. Opening BYT or manually viewing pending
+reminders stays silent, as do prompts for missing booking dates.
+
 Schedules use the computer’s current local time. A numbered monthly day that
 is absent from a month is skipped; choose Last day of the month for every month.
 Automatic login launches run in the background. See [SPEC.md](SPEC.md) for the

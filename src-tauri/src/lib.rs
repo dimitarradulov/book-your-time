@@ -1,5 +1,6 @@
 mod preferences;
 mod reminder_runtime;
+mod reminder_sound;
 mod reminders;
 
 use preferences::Preferences;

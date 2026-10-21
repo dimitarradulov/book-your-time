@@ -28,6 +28,7 @@ The app runs locally in the system tray or menu bar. Opening the timesheet hands
 - Reminder actions are Open timesheet, I've submitted my hours, and snooze for 15 minutes, 30 minutes, or one hour.
 - Completion remains disabled until the URL successfully opens and at least five seconds pass. Confirmation completes all dates shown.
 - Repeat interval defaults to five minutes and is configurable. Start at login defaults on and can be disabled.
+- Automatic booking reminders play a brief double chime, including focused repeats, snooze expiry, and same-day catch-up. Reminder sound defaults on, can be disabled in settings, and respects system volume and mute. Manual navigation and missing-date prompts stay silent. No preview or sound customization is included.
 - Settings and reminder state persist locally. No accounts, backend, synchronization, manager dashboard, or browsable completion history in v1.
 - Current implementation is a scaffold. Mockups demonstrate proposed interface states; they do not indicate implemented scheduling or native behavior.
 

@@ -109,6 +109,7 @@ function PreferencesFields({ variant, initial, onSaved }: {
   const [time, setTime] = useState(initial.time);
   const [repeatInterval, setRepeatInterval] = useState(String(initial.repeatInterval));
   const [startAtLogin, setStartAtLogin] = useState(initial.startAtLogin);
+  const [reminderSound, setReminderSound] = useState(initial.reminderSound);
   const [submitted, setSubmitted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -137,7 +138,7 @@ function PreferencesFields({ variant, initial, onSaved }: {
     try {
       const saved = await savePreferences({
         url: url.trim(), schedule, time,
-        repeatInterval: Number(repeatInterval), startAtLogin,
+        repeatInterval: Number(repeatInterval), startAtLogin, reminderSound,
       });
       onSaved(saved);
     } catch (error: unknown) {
@@ -221,6 +222,11 @@ function PreferencesFields({ variant, initial, onSaved }: {
                 <option key={minutes} value={String(minutes)}>{minutes} {minutes === 1 ? "minute" : "minutes"}</option>
               ))}
             </select>
+          </div>
+          <div className="form-row login-row">
+            <label htmlFor="reminder-sound">Reminder sound</label>
+            <input id="reminder-sound" className="switch" type="checkbox" role="switch"
+              checked={reminderSound} onChange={(event) => setReminderSound(event.target.checked)} />
           </div>
           <div className="form-row login-row">
             <label htmlFor="start-at-login">Start at login</label>

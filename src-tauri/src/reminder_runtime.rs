@@ -147,6 +147,12 @@ fn apply(app: &tauri::AppHandle, action: Action) -> Result<Snapshot, String> {
             session.last_attention = Some(now);
             session.last_dates = state.pending.clone();
             show(app, false);
+            if preferences
+                .as_ref()
+                .is_some_and(|value| value.reminder_sound)
+            {
+                crate::reminder_sound::play();
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.request_user_attention(Some(UserAttentionType::Informational));
             }

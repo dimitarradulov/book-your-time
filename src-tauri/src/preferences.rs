@@ -9,6 +9,12 @@ pub struct Preferences {
     pub time: String,
     pub repeat_interval: u32,
     pub start_at_login: bool,
+    #[serde(default = "sound_enabled_by_default")]
+    pub reminder_sound: bool,
+}
+
+fn sound_enabled_by_default() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -119,7 +125,34 @@ mod tests {
             time: "17:00".into(),
             repeat_interval: 5,
             start_at_login: true,
+            reminder_sound: true,
         }
+    }
+
+    #[test]
+    fn existing_settings_enable_sound_without_changing_other_preferences() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let expected = weekly();
+        let mut legacy = serde_json::to_value(&expected).unwrap();
+        legacy.as_object_mut().unwrap().remove("reminderSound");
+        std::fs::write(&path, serde_json::to_vec(&legacy).unwrap()).unwrap();
+
+        assert_eq!(load(&path).unwrap(), Some(expected));
+    }
+
+    #[test]
+    fn disabling_and_reenabling_sound_survives_reopening() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let mut preferences = weekly();
+        preferences.reminder_sound = false;
+        save(&path, &preferences).unwrap();
+        let mut reopened = load(&path).unwrap().unwrap();
+        assert!(!reopened.reminder_sound);
+        reopened.reminder_sound = true;
+        save(&path, &reopened).unwrap();
+        assert!(load(&path).unwrap().unwrap().reminder_sound);
     }
 
     #[test]
@@ -139,6 +172,7 @@ mod tests {
             time: "09:30".into(),
             repeat_interval: 15,
             start_at_login: false,
+            reminder_sound: false,
         };
         save(&path, &updated).unwrap();
         assert_eq!(load(&path).unwrap(), Some(updated));

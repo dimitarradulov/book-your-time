@@ -166,6 +166,7 @@ mod tests {
             time: "17:00".into(),
             repeat_interval: 5,
             start_at_login: false,
+            reminder_sound: true,
         }
     }
     #[test]

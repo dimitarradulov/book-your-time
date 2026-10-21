@@ -10,6 +10,7 @@ export type Preferences = {
   time: string;
   repeatInterval: number;
   startAtLogin: boolean;
+  reminderSound: boolean;
 };
 
 export const defaultPreferences: Preferences = {
@@ -18,6 +19,7 @@ export const defaultPreferences: Preferences = {
   time: "17:00",
   repeatInterval: 5,
   startAtLogin: true,
+  reminderSound: true,
 };
 
 export async function loadPreferences(): Promise<Preferences | null> {

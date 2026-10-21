@@ -44,6 +44,14 @@ Windows and macOS.
 ## Reminder behavior
 
 - When due, show a reminder window that requests the user's attention.
+- Play one brief, sharp double chime with each automatic booking reminder,
+  including repeats, snooze expiry, and same-day missed reminders after startup
+  or wake. Repeat the sound even while the reminder window is focused.
+- Enable reminder sound by default, with a persistent **Reminder sound** on/off
+  setting. Respect system volume and mute. Do not add a preview, sound picker,
+  or separate volume control.
+- Opening BYT or manually viewing pending reminders stays silent. Prompts to
+  configure missing booking dates stay silent.
 - Repeat every five minutes by default. Make this interval configurable.
 - Closing the window leaves the reminder pending.
 - Offer snooze durations of 15 minutes, 30 minutes, and one hour.
