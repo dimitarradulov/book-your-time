@@ -6,7 +6,7 @@ company's timesheet system.
 Stack: **Tauri 2 + Next.js (React and TypeScript)**, targeting **Windows and macOS**. Settings and
 reminder state stay on your computer; no account or backend is required.
 
-Setup and Settings save the timesheet URL, weekly or monthly rule, local time,
+Setup and Settings save the timesheet URL, weekly schedule or monthly booking dates, local time,
 repeat interval, and start-at-login preference on this computer. Saved options
 restore after quitting and reopening; Cancel and Back discard unsaved edits.
 Start at login defaults on and is applied when saving. Settings are stored in
@@ -25,8 +25,14 @@ or wake. Sound defaults on. Turn off **Reminder sound** in Settings to silence i
 Sound respects system volume and mute. Opening BYT or manually viewing pending
 reminders stays silent, as do prompts for missing booking dates.
 
-Schedules use the computer’s current local time. A numbered monthly day that
-is absent from a month is skipped; choose Last day of the month for every month.
+Schedules use the computer's current local time. Monthly schedules have one
+chosen booking date per month and a shared reminder time. Enter dates as your
+company announces them, one month at a time or several months ahead. Future
+dates can change; dates whose reminders are already due remain protected.
+If next month's date is missing, BYT prompts once seven days before that month
+begins, or catches up when it next runs. A visible notice remains until a date
+is entered. Months without a date do not create booking reminders, and pending
+bookings remain saved for the next configured date.
 Automatic login launches run in the background. See [SPEC.md](SPEC.md) for the
 agreed first-version behavior.
 
@@ -111,5 +117,5 @@ Generated files live in `src-tauri/icons/` and are already referenced by
 Next.js uses [static export](https://v2.tauri.app/start/frontend/nextjs/) because
 the packaged app runs without a Node.js server. Use client components for
 interactive UI and call Tauri APIs from the client; runtime server actions and
-API routes are unavailable. Local preference persistence runs in the Rust desktop layer. Native scheduling
-will also live there.
+API routes are unavailable. Local preference persistence and scheduling run in
+the Rust desktop layer.

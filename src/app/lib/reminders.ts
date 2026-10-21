@@ -5,6 +5,8 @@ export type ReminderSnapshot = {
   preferences: Preferences | null;
   pending: string[];
   today: string;
+  missingMonths: string[];
+  lockedBookingDates: string[];
   snoozeUntil: string | null;
   snoozed: boolean;
   nextReminder: string | null;

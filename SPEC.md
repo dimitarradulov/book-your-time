@@ -32,14 +32,34 @@ Windows and macOS.
 
 ## Scheduling
 
-- Each person configures one active repeating rule on their computer.
+- Each person chooses one active schedule on their computer: weekly or monthly.
 - A weekly rule specifies selected weekdays and a time, such as Friday at 17:00.
-- A monthly rule specifies a day of the month and a time.
-- Monthly scheduling includes an explicit **Last day of the month** option.
+- A monthly schedule uses a separately chosen booking date for each month,
+  because company booking dates can differ from month to month.
+- Allow at most one booking date per month. The date must fall within that month.
+- Allow people to enter one month at a time or several months ahead, as their
+  company announces dates. Do not require dates for the whole year.
+- When adding or changing a booking date, allow today or a future date.
+- All monthly booking dates use one shared reminder time, editable in settings.
+- Allow a month's booking date to change until its reminder becomes due.
+  Preserve already outstanding dates when the schedule changes.
 - Interpret scheduled times in the computer's current local time, including when
   the user travels.
 - Changing the schedule affects future reminders and preserves already
   outstanding dates.
+
+### Missing monthly dates
+
+- For monthly schedules, show one prompt seven days before the next month begins
+  if that month's booking date is missing.
+- If the app misses the prompt, show it the next time the app runs, unless the
+  booking date has since been entered.
+- Keep a visible notice for the missing date until the person enters it,
+  including after the month begins. Do not repeat the prompt every five minutes.
+- Do not invent a booking date or issue a booking reminder for an unscheduled
+  month.
+- Keep outstanding bookings accessible. Present them again at the next
+  configured booking date, even if intervening months have no date configured.
 
 ## Reminder behavior
 

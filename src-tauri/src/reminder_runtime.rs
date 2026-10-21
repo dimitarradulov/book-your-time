@@ -22,6 +22,8 @@ pub struct Snapshot {
     preferences: Option<Preferences>,
     pending: BTreeSet<NaiveDate>,
     today: NaiveDate,
+    missing_months: BTreeSet<NaiveDate>,
+    locked_booking_dates: BTreeSet<NaiveDate>,
     snooze_until: Option<DateTime<FixedOffset>>,
     snoozed: bool,
     next_reminder: Option<String>,
@@ -69,6 +71,8 @@ fn apply(app: &tauri::AppHandle, action: Action) -> Result<Snapshot, String> {
                 preferences: None,
                 pending: BTreeSet::new(),
                 today: now.date_naive(),
+                missing_months: BTreeSet::new(),
+                locked_booking_dates: BTreeSet::new(),
                 snooze_until: None,
                 snoozed: false,
                 next_reminder: None,
@@ -121,9 +125,14 @@ fn apply(app: &tauri::AppHandle, action: Action) -> Result<Snapshot, String> {
         }
         Action::Read | Action::Tick => {}
     }
+    let missing_prompt = tick
+        && preferences
+            .as_ref()
+            .is_some_and(|value| state.take_missing_prompts(value, now.date_naive()));
     // Checkpoint the cursor at most once per minute; mutations are always durable
     // before their successful result is returned to the window.
     if state.pending != before.pending
+        || state.prompted_months != before.prompted_months
         || state.completed != before.completed
         || state.snooze_until != before.snooze_until
         || (state.checked_at - before.checked_at).num_seconds() >= 60
@@ -134,6 +143,12 @@ fn apply(app: &tauri::AppHandle, action: Action) -> Result<Snapshot, String> {
     if state.pending.is_empty() || state.snooze_until != before.snooze_until {
         session.gate = None;
         session.last_attention = None;
+    }
+    if missing_prompt {
+        show(app, false);
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.request_user_attention(Some(UserAttentionType::Informational));
+        }
     }
     if tick && state.interrupt(now) {
         let interval = preferences
@@ -167,6 +182,17 @@ fn apply(app: &tauri::AppHandle, action: Action) -> Result<Snapshot, String> {
         next_reminder: preferences
             .as_ref()
             .and_then(|value| reminders::next_occurrence(value, now, &state.completed)),
+        missing_months: preferences.as_ref().map_or_else(BTreeSet::new, |value| {
+            reminders::missing_months(value, now.date_naive())
+        }),
+        locked_booking_dates: match preferences.as_ref().map(|value| &value.schedule) {
+            Some(preferences::Schedule::Monthly { dates }) => dates
+                .iter()
+                .filter(|date| state.pending.contains(date) || state.completed.contains(date))
+                .copied()
+                .collect(),
+            _ => BTreeSet::new(),
+        },
         preferences,
         pending: state.pending,
         today: now.date_naive(),

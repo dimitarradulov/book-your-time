@@ -2,7 +2,8 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 
 export type Schedule =
   | { kind: "weekly"; days: number[] }
-  | { kind: "monthly"; day: number | "last" };
+  | { kind: "monthly"; dates: string[] }
+  | { kind: "legacymonthly"; day: number | "last" };
 
 export type Preferences = {
   url: string;

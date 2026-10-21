@@ -51,6 +51,12 @@ async fn save_preferences(
         if let Some(previous) = &previous_preferences {
             reminders.advance(previous, now);
         }
+        let occurred_dates = reminders
+            .pending
+            .union(&reminders.completed)
+            .copied()
+            .collect();
+        preferences.validate_update(previous_preferences.as_ref(), now, &occurred_dates)?;
         // Schedule edits affect future occurrences, retaining outstanding dates.
         if previous_preferences.is_some() {
             reminders.checked_at = now;

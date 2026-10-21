@@ -11,6 +11,8 @@ pub struct ReminderState {
     pub pending: BTreeSet<NaiveDate>,
     pub completed: BTreeSet<NaiveDate>,
     pub snooze_until: Option<DateTime<FixedOffset>>,
+    #[serde(default)]
+    pub prompted_months: BTreeSet<NaiveDate>,
 }
 
 impl ReminderState {
@@ -21,6 +23,7 @@ impl ReminderState {
             pending: BTreeSet::new(),
             completed: BTreeSet::new(),
             snooze_until: None,
+            prompted_months: BTreeSet::new(),
         }
     }
     pub fn advance(&mut self, preferences: &Preferences, now: DateTime<FixedOffset>) {
@@ -31,7 +34,10 @@ impl ReminderState {
         while date <= now.date_naive() {
             let due = date.and_time(time);
             if matches_date(preferences, date)
-                && (due > cursor || (timezone_changed && date == now.date_naive()))
+                && (due > cursor
+                    || ((timezone_changed
+                        || matches!(preferences.schedule, Schedule::Monthly { .. }))
+                        && date == now.date_naive()))
                 && due <= now.naive_local()
                 && !self.completed.contains(&date)
             {
@@ -74,11 +80,12 @@ impl ReminderState {
 
 fn matches_date(preferences: &Preferences, date: NaiveDate) -> bool {
     match &preferences.schedule {
+        Schedule::Monthly { dates } => dates.contains(&date),
         Schedule::Weekly { days } => days.contains(&(date.weekday().num_days_from_monday() as u8)),
-        Schedule::Monthly {
+        Schedule::LegacyMonthly {
             day: MonthDay::Number(day),
         } => date.day() == u32::from(*day),
-        Schedule::Monthly {
+        Schedule::LegacyMonthly {
             day: MonthDay::Last(_),
         } => date
             .succ_opt()
@@ -92,6 +99,13 @@ pub fn next_occurrence(
     completed: &BTreeSet<NaiveDate>,
 ) -> Option<String> {
     let time = NaiveTime::parse_from_str(&preferences.time, "%H:%M").ok()?;
+    if let Schedule::Monthly { dates } = &preferences.schedule {
+        return dates
+            .iter()
+            .filter(|date| !completed.contains(date) && date.and_time(time) > now.naive_local())
+            .min()
+            .map(|date| date.and_time(time).format("%Y-%m-%dT%H:%M:%S").to_string());
+    }
     let mut date = now.date_naive();
     // A valid monthly rule has an occurrence within the next two months.
     for _ in 0..=62 {
@@ -106,6 +120,37 @@ pub fn next_occurrence(
         date = date.succ_opt()?;
     }
     None
+}
+
+pub fn missing_months(preferences: &Preferences, today: NaiveDate) -> BTreeSet<NaiveDate> {
+    let Schedule::Monthly { dates } = &preferences.schedule else {
+        return BTreeSet::new();
+    };
+    let current = today.with_day(1).expect("first day");
+    let next = if current.month() == 12 {
+        NaiveDate::from_ymd_opt(current.year() + 1, 1, 1)
+    } else {
+        NaiveDate::from_ymd_opt(current.year(), current.month() + 1, 1)
+    };
+    std::iter::once(current)
+        .chain(next.filter(|next| (*next - today).num_days() <= 7))
+        .filter(|month| {
+            !dates
+                .iter()
+                .any(|date| date.year() == month.year() && date.month() == month.month())
+        })
+        .collect()
+}
+
+impl ReminderState {
+    pub fn take_missing_prompts(&mut self, preferences: &Preferences, today: NaiveDate) -> bool {
+        let missing = missing_months(preferences, today);
+        let prompt = missing
+            .iter()
+            .any(|month| !self.prompted_months.contains(month));
+        self.prompted_months.extend(missing);
+        prompt
+    }
 }
 
 pub fn load(path: &std::path::Path, now: DateTime<FixedOffset>) -> Result<ReminderState, String> {
@@ -235,7 +280,7 @@ mod tests {
     #[test]
     fn monthly_last_day_handles_leap_year_and_numbered_days_skip_short_months() {
         let mut preferences = weekly();
-        preferences.schedule = Schedule::Monthly {
+        preferences.schedule = Schedule::LegacyMonthly {
             day: MonthDay::Last(crate::preferences::LastDay::Last),
         };
         let mut state = ReminderState::new(at("2028-02-01T00:00:00+02:00"));
@@ -248,7 +293,7 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["2028-02-29"]
         );
-        preferences.schedule = Schedule::Monthly {
+        preferences.schedule = Schedule::LegacyMonthly {
             day: MonthDay::Number(31),
         };
         let mut state = ReminderState::new(at("2026-02-01T00:00:00+02:00"));
@@ -320,5 +365,109 @@ mod tests {
         state.advance(&weekly(), at("2026-10-23T17:01:00+03:00"));
         assert_eq!(state.pending.len(), 1);
         assert!(state.interrupt(at("2026-10-23T17:01:00+03:00")));
+    }
+    fn monthly(dates: &[&str]) -> Preferences {
+        Preferences {
+            schedule: Schedule::Monthly {
+                dates: dates.iter().map(|date| date.parse().unwrap()).collect(),
+            },
+            ..weekly()
+        }
+    }
+    #[test]
+    fn arbitrary_monthly_dates_handle_leap_year_rollover_and_sparse_schedules() {
+        let preferences = monthly(&["2027-12-29", "2028-02-29", "2028-10-23"]);
+        let mut state = ReminderState::new(at("2027-12-01T12:00:00+02:00"));
+        state.advance(&preferences, at("2028-03-01T12:00:00+02:00"));
+        assert_eq!(
+            state
+                .pending
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>(),
+            ["2027-12-29", "2028-02-29"]
+        );
+        assert!(!state.interrupt(at("2028-03-01T12:00:00+02:00")));
+        assert_eq!(
+            next_occurrence(
+                &preferences,
+                at("2028-03-01T12:00:00+02:00"),
+                &state.completed
+            ),
+            Some("2028-10-23T17:00:00".into())
+        );
+        state.advance(&preferences, at("2028-10-23T17:00:00+03:00"));
+        assert_eq!(state.pending.len(), 3);
+        assert!(state.interrupt(at("2028-10-23T17:00:00+03:00")));
+        assert_eq!(
+            next_occurrence(
+                &preferences,
+                at("2028-10-23T17:00:00+03:00"),
+                &state.completed
+            ),
+            None
+        );
+    }
+    #[test]
+    fn adding_today_after_shared_time_is_due_even_after_cursor_was_checked() {
+        let now = at("2026-10-21T18:00:00+03:00");
+        let mut state = ReminderState::new(now);
+        state.advance(&monthly(&[]), now);
+        state.advance(&monthly(&["2026-10-21"]), now);
+        assert!(state.interrupt(now));
+        state.completed.insert(now.date_naive());
+        state.pending.clear();
+        state.advance(&monthly(&["2026-10-21"]), now);
+        assert!(state.pending.is_empty());
+    }
+    #[test]
+    fn missing_month_prompt_is_seven_days_before_and_once_across_restart() {
+        let preferences = monthly(&["2026-10-25"]);
+        let mut state = ReminderState::new(at("2026-10-24T12:00:00+03:00"));
+        assert!(!state.take_missing_prompts(&preferences, "2026-10-24".parse().unwrap()));
+        assert!(state.take_missing_prompts(&preferences, "2026-10-25".parse().unwrap()));
+        assert_eq!(
+            missing_months(&preferences, "2026-10-25".parse().unwrap()),
+            BTreeSet::from(["2026-11-01".parse().unwrap()])
+        );
+        let mut restored: ReminderState =
+            serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
+        assert!(!restored.take_missing_prompts(&preferences, "2026-11-01".parse().unwrap()));
+        assert_eq!(
+            missing_months(&monthly(&["2026-11-25"]), "2026-11-01".parse().unwrap()),
+            BTreeSet::new()
+        );
+        assert!(missing_months(&weekly(), "2026-10-25".parse().unwrap()).is_empty());
+    }
+    #[test]
+    fn startup_catches_missing_current_month_and_old_state_defaults_prompt_markers() {
+        let now = at("2027-01-02T12:00:00+02:00");
+        let state = ReminderState::new(now);
+        let mut json = serde_json::to_value(state).unwrap();
+        json.as_object_mut().unwrap().remove("promptedMonths");
+        let mut restored: ReminderState = serde_json::from_value(json).unwrap();
+        assert!(restored.take_missing_prompts(&monthly(&[]), now.date_naive()));
+        assert!(!restored.take_missing_prompts(&monthly(&[]), now.date_naive()));
+        assert_eq!(
+            missing_months(&monthly(&["2026-12-28"]), "2026-12-25".parse().unwrap()),
+            BTreeSet::from(["2027-01-01".parse().unwrap()])
+        );
+    }
+    #[test]
+    fn converting_legacy_rule_preserves_missed_dates_and_snooze() {
+        let old = Preferences {
+            schedule: Schedule::LegacyMonthly {
+                day: MonthDay::Number(25),
+            },
+            ..weekly()
+        };
+        let mut state = ReminderState::new(at("2026-09-24T12:00:00+03:00"));
+        let now = at("2026-10-26T12:00:00+02:00");
+        state.advance(&old, now);
+        state.snooze(now, 30).unwrap();
+        let snooze = state.snooze_until;
+        state.advance(&monthly(&["2026-11-27"]), now);
+        assert_eq!(state.pending.len(), 2);
+        assert_eq!(state.snooze_until, snooze);
     }
 }

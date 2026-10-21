@@ -61,7 +61,7 @@ export function ReminderScreen() {
   if (screen.kind === "loading") return <p role="status">Loading reminders…</p>;
   if (screen.kind === "error") return <div role="alert"><h1>Couldn’t load reminders</h1><p className="error">{screen.message}</p><button className="secondary-button" onClick={() => setAttempt((value) => value + 1)}>Try again</button></div>;
   const { snapshot } = screen;
-  if (!snapshot.preferences) return <ReminderPreferencesForm variant="setup" />;
+  if (!snapshot.preferences) return <ReminderPreferencesForm variant="setup" onSaved={() => setAttempt((value) => value + 1)} />;
   const pending = snapshot.pending.length > 0;
   const snoozed = snapshot.snoozed;
   const showReminder = pending && (!snoozed || reviewPending);
@@ -76,6 +76,11 @@ export function ReminderScreen() {
       </div>
       {showReminder ? <p>{snapshot.pending.length === 1 ? "One reminder date is still unconfirmed." : `${snapshot.pending.length} reminder dates are still unconfirmed.`}</p> : null}
     </header>
+    {snapshot.missingMonths.length > 0 ? <section className="missing-dates" aria-label="Missing booking dates">
+      <h2>Set your booking {snapshot.missingMonths.length === 1 ? "date" : "dates"}</h2>
+      <p>No date chosen for {snapshot.missingMonths.map((month) => new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric" }).format(new Date(`${month}T12:00:00`))).join(" or ")}. BYT will remind you once you choose a date.</p>
+      <Link className="secondary-button" href="/settings/">Set booking dates</Link>
+    </section> : null}
     {showReminder ? <>
       <ul className="pending-dates" aria-label="Unconfirmed reminder dates">
         {snapshot.pending.map((date) => <li key={date}><time dateTime={date}>{dateLabel(date)}</time><span>{date === snapshot.today ? "Today" : "Earlier reminder"}</span></li>)}

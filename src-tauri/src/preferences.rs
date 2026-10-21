@@ -1,5 +1,6 @@
+use chrono::{DateTime, Datelike, FixedOffset, NaiveDate, NaiveTime};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{collections::BTreeSet, path::Path};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -17,11 +18,44 @@ fn sound_enabled_by_default() -> bool {
     true
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum Schedule {
     Weekly { days: Vec<u8> },
-    Monthly { day: MonthDay },
+    Monthly { dates: Vec<NaiveDate> },
+    LegacyMonthly { day: MonthDay },
+}
+
+impl<'de> Deserialize<'de> for Schedule {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+        enum Stored {
+            Weekly {
+                days: Vec<u8>,
+            },
+            Monthly {
+                dates: Option<Vec<NaiveDate>>,
+                day: Option<MonthDay>,
+            },
+            LegacyMonthly {
+                day: MonthDay,
+            },
+        }
+        match Stored::deserialize(deserializer)? {
+            Stored::Weekly { days } => Ok(Self::Weekly { days }),
+            Stored::Monthly {
+                dates: Some(dates),
+                day: None,
+            } => Ok(Self::Monthly { dates }),
+            Stored::Monthly {
+                dates: None,
+                day: Some(day),
+            }
+            | Stored::LegacyMonthly { day } => Ok(Self::LegacyMonthly { day }),
+            _ => Err(serde::de::Error::custom("Choose monthly booking dates.")),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -56,10 +90,19 @@ impl Preferences {
             Schedule::Weekly { days } if days.is_empty() || days.iter().any(|day| *day > 6) => {
                 return Err("Choose at least one valid weekday.".into());
             }
-            Schedule::Monthly {
+            Schedule::LegacyMonthly {
                 day: MonthDay::Number(day),
             } if !(1..=31).contains(day) => {
                 return Err("Choose a day from 1 to 31 or the last day of the month.".into());
+            }
+            Schedule::Monthly { dates } => {
+                let mut months = std::collections::BTreeSet::new();
+                if dates
+                    .iter()
+                    .any(|date| !months.insert((date.year(), date.month())))
+                {
+                    return Err("Choose at most one booking date per month.".into());
+                }
             }
             _ => {}
         }
@@ -76,6 +119,44 @@ impl Preferences {
         }
         if ![1, 5, 10, 15, 30, 60].contains(&self.repeat_interval) {
             return Err("Choose a supported repeat interval.".into());
+        }
+        Ok(())
+    }
+    pub fn validate_update(
+        &self,
+        previous: Option<&Self>,
+        now: DateTime<FixedOffset>,
+        occurred_dates: &BTreeSet<NaiveDate>,
+    ) -> Result<(), String> {
+        self.validate()?;
+        let old_dates = match previous.map(|value| &value.schedule) {
+            Some(Schedule::Monthly { dates }) => dates.as_slice(),
+            _ => &[],
+        };
+        let dates = match &self.schedule {
+            Schedule::Monthly { dates } => dates.as_slice(),
+            Schedule::Weekly { .. } => &[],
+            Schedule::LegacyMonthly { .. } => {
+                return Err("Choose individual monthly booking dates before saving.".into());
+            }
+        };
+        if dates
+            .iter()
+            .any(|date| *date < now.date_naive() && !old_dates.contains(date))
+        {
+            return Err("New booking dates must be today or later.".into());
+        }
+        if let Some(previous) = previous {
+            let old_time =
+                NaiveTime::parse_from_str(&previous.time, "%H:%M").expect("validated time");
+            if matches!(self.schedule, Schedule::Monthly { .. })
+                && old_dates.iter().any(|date| {
+                    (date.and_time(old_time) <= now.naive_local() || occurred_dates.contains(date))
+                        && !dates.contains(date)
+                })
+            {
+                return Err("A booking date cannot change after its reminder becomes due.".into());
+            }
         }
         Ok(())
     }
@@ -167,7 +248,7 @@ mod tests {
         let updated = Preferences {
             url: "http://localhost:8080/hours".into(),
             schedule: Schedule::Monthly {
-                day: MonthDay::Last(LastDay::Last),
+                dates: vec![NaiveDate::from_ymd_opt(2028, 2, 29).unwrap()],
             },
             time: "09:30".into(),
             repeat_interval: 15,
@@ -193,7 +274,7 @@ mod tests {
         for day in [1, 28, 29, 30, 31] {
             let preferences = Preferences {
                 schedule: Schedule::Monthly {
-                    day: MonthDay::Number(day),
+                    dates: vec![NaiveDate::from_ymd_opt(2026, 10, day as u32).unwrap()],
                 },
                 ..weekly()
             };
@@ -236,13 +317,13 @@ mod tests {
                 ..initial.clone()
             },
             Preferences {
-                schedule: Schedule::Monthly {
+                schedule: Schedule::LegacyMonthly {
                     day: MonthDay::Number(0),
                 },
                 ..initial.clone()
             },
             Preferences {
-                schedule: Schedule::Monthly {
+                schedule: Schedule::LegacyMonthly {
                     day: MonthDay::Number(32),
                 },
                 ..initial.clone()
@@ -272,5 +353,106 @@ mod tests {
         std::fs::write(&path, "broken json").unwrap();
         assert!(load(&path).is_err());
         assert_eq!(std::fs::read_to_string(path).unwrap(), "broken json");
+    }
+    fn monthly(dates: &[&str]) -> Preferences {
+        Preferences {
+            schedule: Schedule::Monthly {
+                dates: dates.iter().map(|date| date.parse().unwrap()).collect(),
+            },
+            ..weekly()
+        }
+    }
+    #[test]
+    fn monthly_dates_reject_duplicate_months_and_invalid_calendar_dates() {
+        assert!(monthly(&["2026-10-20", "2026-10-21"]).validate().is_err());
+        assert!(monthly(&["2026-10-20", "2026-10-20"]).validate().is_err());
+        assert!(monthly(&[]).validate().is_ok());
+        assert!(monthly(&["2028-02-29", "2029-02-28"]).validate().is_ok());
+        let mut json = serde_json::to_value(monthly(&[])).unwrap();
+        json["schedule"]["dates"] = serde_json::json!(["2027-02-29"]);
+        assert!(serde_json::from_value::<Preferences>(json).is_err());
+    }
+    #[test]
+    fn edits_allow_future_changes_and_preserve_due_dates_and_unchanged_past_dates() {
+        let now = DateTime::parse_from_rfc3339("2026-10-21T18:00:00+03:00").unwrap();
+        let old = monthly(&["2026-09-25", "2026-10-21", "2026-11-25"]);
+        assert!(
+            monthly(&["2026-09-25", "2026-10-21", "2026-11-27"])
+                .validate_update(Some(&old), now, &BTreeSet::new())
+                .is_ok()
+        );
+        assert!(
+            monthly(&["2026-09-25", "2026-10-22", "2026-11-25"])
+                .validate_update(Some(&old), now, &BTreeSet::new())
+                .is_err()
+        );
+        assert!(
+            monthly(&["2026-10-20"])
+                .validate_update(None, now, &BTreeSet::new())
+                .is_err()
+        );
+        assert!(
+            monthly(&["2026-10-21"])
+                .validate_update(None, now, &BTreeSet::new())
+                .is_ok()
+        );
+        assert!(
+            weekly()
+                .validate_update(Some(&old), now, &BTreeSet::new())
+                .is_ok()
+        );
+    }
+    #[test]
+    fn legacy_monthly_preferences_load_without_rewriting_and_convert_only_on_save() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("preferences.json");
+        let mut json = serde_json::to_value(weekly()).unwrap();
+        json["schedule"] = serde_json::json!({"kind": "monthly", "day": "last"});
+        let bytes = serde_json::to_vec(&json).unwrap();
+        std::fs::write(&path, &bytes).unwrap();
+        let loaded = load(&path).unwrap().unwrap();
+        assert!(matches!(loaded.schedule, Schedule::LegacyMonthly { .. }));
+        assert_eq!(std::fs::read(&path).unwrap(), bytes);
+        assert!(
+            loaded
+                .validate_update(
+                    Some(&loaded),
+                    DateTime::parse_from_rfc3339("2026-10-21T18:00:00+03:00").unwrap(),
+                    &BTreeSet::new(),
+                )
+                .is_err()
+        );
+        let converted = monthly(&["2026-10-31"]);
+        save(&path, &converted).unwrap();
+        assert_eq!(load(&path).unwrap(), Some(converted));
+    }
+    #[test]
+    fn moving_shared_time_does_not_unlock_an_existing_occurrence() {
+        let now = DateTime::parse_from_rfc3339("2026-10-21T18:00:00+03:00").unwrap();
+        let original = monthly(&["2026-10-21", "2026-11-25"]);
+        let occurred = BTreeSet::from(["2026-10-21".parse().unwrap()]);
+        let later_time = Preferences {
+            time: "19:00".into(),
+            ..original.clone()
+        };
+        assert!(
+            later_time
+                .validate_update(Some(&original), now, &occurred)
+                .is_ok()
+        );
+        let moved = Preferences {
+            time: "19:00".into(),
+            ..monthly(&["2026-10-22", "2026-11-25"])
+        };
+        assert!(
+            moved
+                .validate_update(Some(&later_time), now, &occurred)
+                .is_err()
+        );
+        assert!(
+            monthly(&["2026-10-21", "2026-11-26"])
+                .validate_update(Some(&later_time), now, &occurred)
+                .is_ok()
+        );
     }
 }

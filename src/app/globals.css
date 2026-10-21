@@ -114,3 +114,12 @@ button:disabled { cursor: default; background: #e5e8e2; border-color: #c5ccc3; c
 
 .status-actions { display: flex; flex-wrap: wrap; gap: 12px; }
 .status-actions .secondary-button { margin: 0; }
+
+.monthly-dates { display: grid; gap: 14px; margin-bottom: 12px; }
+.monthly-date > label { display: block; margin-bottom: 5px; font-size: 13px; }
+.monthly-date-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.monthly-date-actions input { min-width: 150px; }
+.monthly-date-actions input[readonly] { opacity: .7; }
+.missing-dates { margin-bottom: 24px; padding: 18px; border: 1px solid var(--border); border-radius: 8px; }
+.missing-dates h2 { margin: 0 0 8px; font-size: 16px; }
+.missing-dates p { margin: 0 0 14px; }
