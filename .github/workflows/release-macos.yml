@@ -110,7 +110,16 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
-          app="src-tauri/target/$TARGET/release/bundle/macos/BYT.app"
+          shopt -s nullglob
+          installers=(src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg)
+          if [ "${#installers[@]}" -ne 1 ]; then
+            echo "Expected exactly one DMG installer"
+            exit 1
+          fi
+          mount=$(mktemp -d "$RUNNER_TEMP/byt-verify.XXXXXX")
+          hdiutil attach "${installers[0]}" -readonly -nobrowse -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"; rmdir "$mount"' EXIT
+          app="$mount/BYT.app"
           codesign --verify --deep --strict --verbose=2 "$app"
           codesign --display --verbose=4 "$app" 2> "$RUNNER_TEMP/signature.txt"
           grep -Fx "Authority=$APPLE_SIGNING_IDENTITY" "$RUNNER_TEMP/signature.txt"
