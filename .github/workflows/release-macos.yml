@@ -1,0 +1,178 @@
+name: Release macOS
+
+on:
+  push:
+    tags: ['v*', 'macos-test-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-macos
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate version and signing secrets
+        id: version
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, tomllib
+          from pathlib import Path
+
+          required = ('APPLE_CERTIFICATE', 'APPLE_CERTIFICATE_PASSWORD', 'APPLE_SIGNING_IDENTITY',
+                      'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID')
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Missing GitHub secrets: ' + ', '.join(missing))
+          version = json.loads(Path('src-tauri/tauri.conf.json').read_text())['version']
+          versions = [json.loads(Path('package.json').read_text())['version'],
+                      json.loads(Path('package-lock.json').read_text())['version'],
+                      tomllib.loads(Path('src-tauri/Cargo.toml').read_text())['package']['version']]
+          if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', version):
+              raise SystemExit('Invalid release version')
+          if any(value != version for value in versions):
+              raise SystemExit('Package, lockfile, Cargo, and Tauri versions must match')
+          tag = 'v' + version
+          if os.environ['GITHUB_REF_TYPE'] == 'tag':
+              ref = os.environ['GITHUB_REF_NAME']
+              if ref.startswith('macos-test-'):
+                  tag = ref
+              elif ref != tag:
+                  raise SystemExit('Release tag must match the app version: ' + tag)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\ntag={tag}\n')
+          PY
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  build:
+    needs: validate
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+      - run: npm ci
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo check --manifest-path src-tauri/Cargo.toml --locked --target ${{ matrix.target }}
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Build, sign, and notarize
+        uses: tauri-apps/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          args: --target ${{ matrix.target }} --bundles dmg -- --locked
+          uploadUpdaterJson: false
+      - name: Verify signature and notarization
+        env:
+          TARGET: ${{ matrix.target }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          app="src-tauri/target/$TARGET/release/bundle/macos/BYT.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=4 "$app" 2> "$RUNNER_TEMP/signature.txt"
+          grep -Fx "Authority=$APPLE_SIGNING_IDENTITY" "$RUNNER_TEMP/signature.txt"
+          grep -Fx "TeamIdentifier=$APPLE_TEAM_ID" "$RUNNER_TEMP/signature.txt"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: macos-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: [validate, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: macos-*
+          path: installers
+          merge-multiple: true
+      - name: Prepare draft release
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        with:
+          script: |
+            const fs = require('node:fs/promises');
+            const path = require('node:path');
+            const tag = process.env.RELEASE_TAG;
+            const files = (await fs.readdir('installers')).filter(name => name.endsWith('.dmg'));
+            if (files.length !== 2) throw new Error('Expected exactly two macOS DMG installers');
+            try {
+              const { data: commit } = await github.rest.repos.getCommit({ ...context.repo, ref: tag });
+              if (commit.sha !== context.sha) throw new Error('Release tag points to a different commit');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            const releases = await github.paginate(github.rest.repos.listReleases, context.repo);
+            let release = releases.find(item => item.tag_name === tag);
+            if (release && !release.draft) throw new Error('Refusing to modify a published release');
+            if (release && release.target_commitish !== context.sha) {
+              throw new Error('Existing draft targets a different commit');
+            }
+            if (!release) {
+              ({ data: release } = await github.rest.repos.createRelease({
+                ...context.repo, tag_name: tag, target_commitish: context.sha,
+                name: `BYT ${process.env.RELEASE_VERSION}${tag.startsWith('macos-test-') ? ' macOS test' : ''}`,
+                draft: true, prerelease: tag.startsWith('macos-test-'),
+                body: 'macOS installers for Apple silicon (aarch64) and Intel (x64). Download the matching DMG and drag BYT into Applications. Test installation before publishing this draft.',
+              }));
+            }
+            for (const name of files) {
+              const existing = release.assets.find(asset => asset.name === name);
+              if (existing) await github.rest.repos.deleteReleaseAsset({ ...context.repo, asset_id: existing.id });
+              await github.rest.repos.uploadReleaseAsset({
+                ...context.repo, release_id: release.id, name,
+                data: await fs.readFile(path.join('installers', name)),
+              });
+            }
+            await core.summary.addLink('Review the draft release', release.html_url).write();
