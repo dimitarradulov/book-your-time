@@ -1,0 +1,236 @@
+name: Release desktop
+
+on:
+  push:
+    tags: ['v*', 'desktop-test-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-desktop
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Validate version and signing secrets
+        id: version
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, tomllib
+          from pathlib import Path
+
+          required = ('APPLE_CERTIFICATE', 'APPLE_CERTIFICATE_PASSWORD', 'APPLE_SIGNING_IDENTITY',
+                      'APPLE_ID', 'APPLE_PASSWORD', 'APPLE_TEAM_ID')
+          missing = [name for name in required if not os.environ.get(name)]
+          if missing:
+              raise SystemExit('Missing GitHub secrets: ' + ', '.join(missing))
+          version = json.loads(Path('src-tauri/tauri.conf.json').read_text())['version']
+          versions = [json.loads(Path('package.json').read_text())['version'],
+                      json.loads(Path('package-lock.json').read_text())['version'],
+                      tomllib.loads(Path('src-tauri/Cargo.toml').read_text())['package']['version']]
+          if not re.fullmatch(r'\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?', version):
+              raise SystemExit('Invalid release version')
+          if any(value != version for value in versions):
+              raise SystemExit('Package, lockfile, Cargo, and Tauri versions must match')
+          tag = 'v' + version
+          if os.environ['GITHUB_REF_TYPE'] == 'tag':
+              ref = os.environ['GITHUB_REF_NAME']
+              if ref.startswith('desktop-test-'):
+                  tag = ref
+              elif ref != tag:
+                  raise SystemExit('Release tag must match the app version: ' + tag)
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\ntag={tag}\n')
+          PY
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+  build-macos:
+    needs: validate
+    runs-on: macos-latest
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: stable
+          targets: ${{ matrix.target }}
+          components: rustfmt
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a
+        with:
+          workspaces: src-tauri -> target
+          key: ${{ matrix.target }}
+      - run: npm ci
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo check --manifest-path src-tauri/Cargo.toml --locked --target ${{ matrix.target }}
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Build, sign, and notarize
+        uses: tauri-apps/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          args: --target ${{ matrix.target }} --bundles dmg -- --locked
+          uploadUpdaterJson: false
+      - name: Verify signature and notarization
+        env:
+          TARGET: ${{ matrix.target }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          shopt -s nullglob
+          installers=(src-tauri/target/"$TARGET"/release/bundle/dmg/*.dmg)
+          if [ "${#installers[@]}" -ne 1 ]; then
+            echo "Expected exactly one DMG installer"
+            exit 1
+          fi
+          mount=$(mktemp -d "$RUNNER_TEMP/byt-verify.XXXXXX")
+          hdiutil attach "${installers[0]}" -readonly -nobrowse -mountpoint "$mount"
+          trap 'hdiutil detach "$mount"; rmdir "$mount"' EXIT
+          app="$mount/BYT.app"
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign --display --verbose=4 "$app" 2> "$RUNNER_TEMP/signature.txt"
+          grep -Fx "Authority=$APPLE_SIGNING_IDENTITY" "$RUNNER_TEMP/signature.txt"
+          grep -Fx "TeamIdentifier=$APPLE_TEAM_ID" "$RUNNER_TEMP/signature.txt"
+          xcrun stapler validate "$app"
+          spctl --assess --type execute --verbose=2 "$app"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: installers-macos-${{ matrix.target }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+          if-no-files-found: error
+          retention-days: 14
+
+  build-windows:
+    needs: validate
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: stable
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt
+      - uses: Swatinem/rust-cache@e9d7b9f1e587218970671bac74e5511ed9506e6a
+        with:
+          workspaces: src-tauri -> target
+          key: x86_64-pc-windows-msvc
+      - run: npm ci
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: cargo check --manifest-path src-tauri/Cargo.toml --locked --target x86_64-pc-windows-msvc
+      - run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+      - name: Build unsigned Windows installer
+        uses: tauri-apps/tauri-action@944946e3e4cac6603d1fe8f514171e9ecd3c78aa
+        with:
+          args: --target x86_64-pc-windows-msvc --bundles nsis -- --locked
+          uploadUpdaterJson: false
+      - name: Verify unsigned Windows installer
+        run: |
+          $installers = @(Get-ChildItem -Path 'src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis' -Filter '*-setup.exe')
+          if ($installers.Count -ne 1) { throw 'Expected exactly one Windows setup installer' }
+          $app = 'src-tauri/target/x86_64-pc-windows-msvc/release/byt.exe'
+          foreach ($file in @($installers[0].FullName, $app)) {
+            $signature = Get-AuthenticodeSignature -FilePath $file
+            if ($signature.Status -ne 'NotSigned') { throw "Expected an unsigned executable: $file" }
+            Write-Output "Verified unsigned executable: $file"
+          }
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: installers-windows-x64
+          path: src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: [validate, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: installers-*
+          path: installers
+          merge-multiple: true
+      - name: Prepare draft release
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b
+        env:
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        with:
+          script: |
+            const fs = require('node:fs/promises');
+            const path = require('node:path');
+            const tag = process.env.RELEASE_TAG;
+            const version = process.env.RELEASE_VERSION;
+            const files = (await fs.readdir('installers')).sort();
+            const expected = [`BYT_${version}_aarch64.dmg`, `BYT_${version}_x64.dmg`, `BYT_${version}_x64-setup.exe`].sort();
+            if (JSON.stringify(files) !== JSON.stringify(expected)) {
+              throw new Error('Expected two macOS DMGs and one Windows x64 setup installer');
+            }
+            try {
+              const { data: commit } = await github.rest.repos.getCommit({ ...context.repo, ref: tag });
+              if (commit.sha !== context.sha) throw new Error('Release tag points to a different commit');
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+            const releases = await github.paginate(github.rest.repos.listReleases, context.repo);
+            let release = releases.find(item => item.tag_name === tag);
+            if (release && !release.draft) throw new Error('Refusing to modify a published release');
+            if (release && release.target_commitish !== context.sha) {
+              throw new Error('Existing draft targets a different commit');
+            }
+            if (!release) {
+              ({ data: release } = await github.rest.repos.createRelease({
+                ...context.repo, tag_name: tag, target_commitish: context.sha,
+                name: `BYT ${process.env.RELEASE_VERSION}${tag.startsWith('desktop-test-') ? ' desktop test' : ''}`,
+                draft: true, prerelease: tag.startsWith('desktop-test-'),
+                body: 'macOS installers are signed and notarized for Apple silicon (aarch64) and Intel (x64). Download the matching DMG and drag BYT into Applications. The Windows x64 setup installer is unsigned for testing and may show an unknown-publisher or SmartScreen warning. Test installation and app behavior on each platform before publishing this draft.',
+              }));
+            }
+            for (const name of files) {
+              const existing = release.assets.find(asset => asset.name === name);
+              if (existing) await github.rest.repos.deleteReleaseAsset({ ...context.repo, asset_id: existing.id });
+              await github.rest.repos.uploadReleaseAsset({
+                ...context.repo, release_id: release.id, name,
+                data: await fs.readFile(path.join('installers', name)),
+              });
+            }
+            await core.summary.addLink('Review the draft release', release.html_url).write();

@@ -84,12 +84,71 @@ npm run tauri build
 
 The build exports Next.js into `out/`, then embeds those static files in the
 native app. Installers are written to `src-tauri/target/release/bundle/`. Build on
-macOS for macOS packages and on Windows for Windows installers. Distribution
-signing and notarization are not configured yet.
+macOS for macOS packages and on Windows for Windows installers. To sign local
+builds, supply your own signing environment. The release workflow supplies
+macOS signing credentials through GitHub Actions secrets.
 
 Run `npm run build` to verify only the frontend export, or
 `npm run tauri build -- --no-bundle` to compile the desktop app without creating
 installers.
+
+## Release desktop installers
+
+[Release desktop](.github/workflows/release-desktop.yml) builds signed and
+notarized Apple silicon and Intel DMGs, plus an unsigned Windows x64 setup
+installer for testing. The Mac apps must pass signature, notarization ticket,
+and Gatekeeper checks. The Windows app and installer must be unsigned.
+All three installers must pass before the workflow prepares a draft GitHub
+Release. It never publishes the release automatically.
+
+Windows signing is not configured. The test installer may show an
+unknown-publisher or SmartScreen warning. Windows jobs receive no Apple secrets.
+
+Add these macOS repository secrets under **Settings → Secrets and variables → Actions**:
+
+| Secret | Value |
+| --- | --- |
+| `APPLE_CERTIFICATE` | Base64-encoded Developer ID Application certificate and private key exported as `.p12` |
+| `APPLE_CERTIFICATE_PASSWORD` | Password protecting the exported `.p12` |
+| `APPLE_SIGNING_IDENTITY` | Full `Developer ID Application: Name (TEAMID)` certificate name |
+| `APPLE_ID` | Apple Account email |
+| `APPLE_PASSWORD` | Apple app-specific password for notarization |
+| `APPLE_TEAM_ID` | Apple Developer Team ID |
+
+Keep credentials out of this repository. See the
+[Tauri macOS signing guide](https://v2.tauri.app/distribute/sign/macos/) for creating
+the certificate and notarization credentials.
+
+Set the same version in `package.json`, `package-lock.json`,
+`src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`. Commit the changes, then
+push a matching version tag from the commit to release:
+
+```sh
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+To test the workflow before preparing a versioned release, push a unique
+`desktop-test-*` tag, such as `desktop-test-20261027-1`, on the commit to check. This
+also works for the first run before the workflow reaches the default branch.
+Test tags produce separate draft prereleases and do not consume the version tag.
+
+After the workflow exists on the default branch, you can also select
+**Actions → Release desktop → Run workflow** and choose the branch to build.
+Manual runs derive the release tag from the app version. Existing tags and
+drafts must target that same commit. To release different code, bump the version;
+the workflow refuses to replace a published release.
+
+Open the draft in GitHub Releases and download the matching DMG or Windows
+`-setup.exe`. Check installation, launch, saved settings, reminders, tray behavior,
+and start at login on each platform before publishing. Intel runtime behavior
+needs an Intel Mac check even when its build succeeds on an Apple silicon runner.
+A Windows build does not prove Windows installation or runtime behavior. Follow
+the native verification skill for isolated Mac app checks.
+
+Releases in a private repository require repository access to download. Public
+distribution requires a public repository or a separate public distribution
+location. Publishing a GitHub Release does not add automatic updates to BYT.
 
 ## App icon
 
