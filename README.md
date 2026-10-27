@@ -1,180 +1,102 @@
-# BYT
+# BYT · Book Your Time
 
-BYT (Book Your Time) is a desktop app that persistently reminds you to submit your working hours in your
-company's timesheet system.
+A desktop reminder to submit your working hours in your company's timesheet system.
+BYT runs locally on macOS and Windows. No BYT account or backend required.
 
-Stack: **Tauri 2 + Next.js (React and TypeScript)**, targeting **Windows and macOS**. Settings and
-reminder state stay on your computer; no account or backend is required.
+**[Download the latest release](https://github.com/dimitarradulov/book-your-time/releases/latest)**
+· [Report a problem](https://github.com/dimitarradulov/book-your-time/issues)
+· [Contribute](CONTRIBUTING.md)
 
-Setup and Settings save the timesheet URL, weekly schedule or monthly booking dates, local time,
-repeat interval, and start-at-login preference on this computer. Saved options
-restore after quitting and reopening; Cancel and Back discard unsaved edits.
-Start at login defaults on and is applied when saving. Settings are stored in
-`preferences.json` in Tauri’s app configuration directory.
-Reminders run in the native app, including while its window is closed. Due and
-missed dates persist in `reminders.json` beside settings; older unconfirmed dates
-join the next scheduled reminder. Snooze for 15 minutes, 30 minutes, or one hour.
-Opening the timesheet uses the default browser; confirming submission is a
-separate action available five seconds after a successful browser handoff.
-Confirmation clears the listed dates without submitting anything to the website.
-The tray/menu bar provides pending reminders, settings, and Quit BYT.
+<img src="docs/screenshots/reminder.jpg" alt="BYT reminder showing an unconfirmed booking date, Open timesheet, submission confirmation, and snooze controls" width="800">
 
-Automatic booking reminders play a brief double chime, including repeats while
-the window is focused, snooze expiry, and same-day missed reminders after startup
-or wake. Sound defaults on. Turn off **Reminder sound** in Settings to silence it.
-Sound respects system volume and mute. Opening BYT or manually viewing pending
-reminders stays silent, as do prompts for missing booking dates.
+## What BYT does
 
-Schedules use the computer's current local time. Monthly schedules have one
-chosen booking date per month and a shared reminder time. Enter dates as your
-company announces them, one month at a time or several months ahead. Future
-dates can change; dates whose reminders are already due remain protected.
-If next month's date is missing, BYT prompts once seven days before that month
-begins, or catches up when it next runs. A visible notice remains until a date
-is entered. Months without a date do not create booking reminders, and pending
-bookings remain saved for the next configured date.
-Automatic login launches run in the background. See [SPEC.md](SPEC.md) for the
-agreed first-version behavior.
+- Reminds you on selected weekdays or on a separate booking date for each month.
+- Repeats reminders until you confirm submission, with snooze for 15 minutes,
+  30 minutes, or one hour.
+- Carries unconfirmed dates into the next scheduled reminder.
+- Opens your timesheet in your default browser.
+- Keeps running in the Windows system tray or macOS menu bar when you close its window.
+- Offers optional reminder sound and launch at login.
+- Stores settings and reminder state on your computer. Scheduling works offline
+  and follows your computer's local time.
 
-Run the native behavior and persistence checks with:
+BYT does not enter or submit hours for you. It does not connect to your company's
+account, sync between computers, or provide a completion history.
 
-```sh
-cargo test --manifest-path src-tauri/Cargo.toml
-```
+## Install
 
-Native UI verification follows [.agents/skills/verify/SKILL.md](.agents/skills/verify/SKILL.md).
-Its scaffold-era feature map is older than the implementation; record actual
-controls and outcomes when exercising reminders. Windows behavior still needs
-verification on Windows.
+Open the [latest release](https://github.com/dimitarradulov/book-your-time/releases/latest)
+and choose the installer for your computer:
 
-## Prerequisites
+| Computer | Download |
+| --- | --- |
+| Mac with Apple silicon, M1 or newer | `BYT_*_aarch64.dmg` |
+| Mac with an Intel processor | `BYT_*_x64.dmg` |
+| Windows x64 | `BYT_*_x64-setup.exe` |
 
-- Node.js 20.9 or newer and npm (Node.js 22 LTS recommended).
-- Stable Rust installed through [rustup](https://rustup.rs/).
-- macOS: Xcode Command Line Tools (`xcode-select --install`), or full Xcode.
-- Windows: Microsoft C++ Build Tools with the **Desktop development with C++**
-  workload, and Microsoft Edge WebView2.
+On macOS, open the DMG and drag BYT into **Applications**. The Mac builds are
+signed and notarized.
 
-See the [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) for
-platform-specific setup. After installing Rust, restart your terminal so `cargo`
-is available on your PATH.
+On Windows, run the setup executable. The current Windows installer is unsigned,
+so Windows may display an unknown-publisher or SmartScreen warning.
+
+Download an installer from the release's **Assets** section. The **Source code**
+archives are for developers. You do not need Node.js or Rust to use BYT.
+
+## Set up your reminders
+
+1. Open BYT and enter your timesheet URL.
+2. Choose a weekly schedule or enter your company's monthly booking dates.
+3. Choose the reminder time and select **Save setup**.
+4. Adjust **Reminder sound**, **Start at login**, and the repeat interval in **Settings**.
+
+For monthly schedules, enter dates as your company announces them. Each month has
+one booking date, and all dates share the same reminder time. BYT prompts you if
+the next month's date is missing. It does not invent a date for that month.
+
+When a reminder appears, select **Open timesheet** and submit your hours on the
+website. Then select **I've submitted my hours** in BYT to clear the listed dates.
+Confirmation becomes available five seconds after BYT successfully opens the link.
+Opening the website alone does not complete a reminder.
+
+Use **Snooze** when you need more time. Closing the window keeps BYT running;
+select **Quit BYT** from its tray or menu bar menu to stop it.
+
+## Screenshots
+
+<table>
+  <tr><th>First-time setup</th><th>Settings</th></tr>
+  <tr>
+    <td><img src="docs/screenshots/setup.jpg" alt="BYT setup with a timesheet URL, schedule, reminder time, and Save setup button" width="390"></td>
+    <td><img src="docs/screenshots/settings.jpg" alt="BYT settings with schedule, repeat interval, reminder sound, and start-at-login controls" width="390"></td>
+  </tr>
+</table>
+
+Screenshots show the macOS app with example settings. Windows uses its native
+window frame.
+
+## Updates and help
+
+Automatic updates are not included. Download newer versions from
+[Releases](https://github.com/dimitarradulov/book-your-time/releases).
+
+For bugs or suggestions, [open an issue](https://github.com/dimitarradulov/book-your-time/issues)
+with your operating system, BYT version, and what happened. Remove private URLs
+or company information from screenshots.
 
 ## Development
 
-```sh
-npm ci
-npm run tauri dev
-```
+BYT uses Tauri 2, Next.js, React, TypeScript, and Rust. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks, architecture, and releases.
+[SPEC.md](SPEC.md) defines the agreed first-version behavior.
 
-Tauri starts the Next.js development server at `http://127.0.0.1:3000` and opens
-the desktop window. Keep port 3000 available. To work on the frontend in a
-browser, run `npm run dev` instead.
+### Prerequisites
 
-```sh
-npm run lint
-npm run typecheck
-cargo check --manifest-path src-tauri/Cargo.toml
-```
+Developer tools are required only when building from source. See the
+[developer prerequisites](CONTRIBUTING.md#prerequisites).
 
-## Build
+### App icon
 
-```sh
-npm run tauri build
-```
-
-The build exports Next.js into `out/`, then embeds those static files in the
-native app. Installers are written to `src-tauri/target/release/bundle/`. Build on
-macOS for macOS packages and on Windows for Windows installers. To sign local
-builds, supply your own signing environment. The release workflow supplies
-macOS signing credentials through GitHub Actions secrets.
-
-Run `npm run build` to verify only the frontend export, or
-`npm run tauri build -- --no-bundle` to compile the desktop app without creating
-installers.
-
-## Release desktop installers
-
-[Release desktop](.github/workflows/release-desktop.yml) builds signed and
-notarized Apple silicon and Intel DMGs, plus an unsigned Windows x64 setup
-installer for testing. The Mac apps must pass signature, notarization ticket,
-and Gatekeeper checks. The Windows app and installer must be unsigned.
-All three installers must pass before the workflow prepares a draft GitHub
-Release. It never publishes the release automatically.
-
-Windows signing is not configured. The test installer may show an
-unknown-publisher or SmartScreen warning. Windows jobs receive no Apple secrets.
-
-Add these macOS repository secrets under **Settings → Secrets and variables → Actions**:
-
-| Secret | Value |
-| --- | --- |
-| `APPLE_CERTIFICATE` | Base64-encoded Developer ID Application certificate and private key exported as `.p12` |
-| `APPLE_CERTIFICATE_PASSWORD` | Password protecting the exported `.p12` |
-| `APPLE_SIGNING_IDENTITY` | Full `Developer ID Application: Name (TEAMID)` certificate name |
-| `APPLE_ID` | Apple Account email |
-| `APPLE_PASSWORD` | Apple app-specific password for notarization |
-| `APPLE_TEAM_ID` | Apple Developer Team ID |
-
-Keep credentials out of this repository. See the
-[Tauri macOS signing guide](https://v2.tauri.app/distribute/sign/macos/) for creating
-the certificate and notarization credentials.
-
-Set the same version in `package.json`, `package-lock.json`,
-`src-tauri/Cargo.toml`, and `src-tauri/tauri.conf.json`. Commit the changes, then
-push a matching version tag from the commit to release:
-
-```sh
-git tag v0.1.0
-git push origin v0.1.0
-```
-
-To test the workflow before preparing a versioned release, push a unique
-`desktop-test-*` tag, such as `desktop-test-20261027-1`, on the commit to check. This
-also works for the first run before the workflow reaches the default branch.
-Test tags produce separate draft prereleases and do not consume the version tag.
-
-After the workflow exists on the default branch, you can also select
-**Actions → Release desktop → Run workflow** and choose the branch to build.
-Manual runs derive the release tag from the app version. Existing tags and
-drafts must target that same commit. To release different code, bump the version;
-the workflow refuses to replace a published release.
-
-Open the draft in GitHub Releases and download the matching DMG or Windows
-`-setup.exe`. Check installation, launch, saved settings, reminders, tray behavior,
-and start at login on each platform before publishing. Intel runtime behavior
-needs an Intel Mac check even when its build succeeds on an Apple silicon runner.
-A Windows build does not prove Windows installation or runtime behavior. Follow
-the native verification skill for isolated Mac app checks.
-
-Releases in a private repository require repository access to download. Public
-distribution requires a public repository or a separate public distribution
-location. Publishing a GitHub Release does not add automatic updates to BYT.
-
-## App icon
-
-The editable icon source is [`app-icon.svg`](app-icon.svg): warm white BYT
-lettering on the app's muted green, with transparent padding for the macOS Dock.
-The letters are vector paths, so no font installation is needed.
-
-After editing the source, regenerate the platform icons and rebuild:
-
-```sh
-npm run tauri -- icon ./app-icon.svg
-npm run tauri -- build
-```
-
-Generated files live in `src-tauri/icons/` and are already referenced by
-`src-tauri/tauri.conf.json`. Install and reopen the rebuilt app to use the icon.
-
-## Project structure
-
-- `src/app/`: Next.js App Router pages, layout, and styles.
-- `src-tauri/src/`: Rust desktop entry point and Tauri application setup.
-- `src-tauri/tauri.conf.json`: Native window and frontend build configuration.
-- `src-tauri/capabilities/`: Permissions granted to the desktop window.
-
-Next.js uses [static export](https://v2.tauri.app/start/frontend/nextjs/) because
-the packaged app runs without a Node.js server. Use client components for
-interactive UI and call Tauri APIs from the client; runtime server actions and
-API routes are unavailable. Local preference persistence and scheduling run in
-the Rust desktop layer.
+The editable icon is [app-icon.svg](app-icon.svg). See the
+[icon workflow](CONTRIBUTING.md#app-icon) to regenerate the platform assets.
