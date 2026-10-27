@@ -7,7 +7,7 @@ BYT runs locally on macOS and Windows. No BYT account or backend required.
 · [Report a problem](https://github.com/dimitarradulov/book-your-time/issues)
 · [Contribute](CONTRIBUTING.md)
 
-<img src="docs/screenshots/reminder.png" alt="BYT reminder showing an unconfirmed booking date, Open timesheet, submission confirmation, and snooze controls" width="800">
+<img src="docs/screenshots/reminder.jpg" alt="BYT reminder showing an unconfirmed booking date, Open timesheet, submission confirmation, and snooze controls" width="800">
 
 ## What BYT does
 
@@ -68,8 +68,8 @@ select **Quit BYT** from its tray or menu bar menu to stop it.
 <table>
   <tr><th>First-time setup</th><th>Settings</th></tr>
   <tr>
-    <td><img src="docs/screenshots/setup.png" alt="BYT setup with a timesheet URL, schedule, reminder time, and Save setup button" width="390"></td>
-    <td><img src="docs/screenshots/settings.png" alt="BYT settings with schedule, repeat interval, reminder sound, and start-at-login controls" width="390"></td>
+    <td><img src="docs/screenshots/setup.jpg" alt="BYT setup with a timesheet URL, schedule, reminder time, and Save setup button" width="390"></td>
+    <td><img src="docs/screenshots/settings.jpg" alt="BYT settings with schedule, repeat interval, reminder sound, and start-at-login controls" width="390"></td>
   </tr>
 </table>
 
